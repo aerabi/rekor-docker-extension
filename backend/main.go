@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"github.com/labstack/echo/middleware"
 	"net"
@@ -14,6 +15,12 @@ import (
 var logger = logrus.New()
 
 func main() {
+	rekorClient, err := NewRekorClient(context.Background())
+
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	var socketPath string
 	flag.StringVar(&socketPath, "socket", "/run/guest-services/backend.sock", "Unix domain socket to listen on")
 	flag.Parse()
@@ -44,7 +51,7 @@ func main() {
 	}
 	router.Listener = ln
 
-	router.GET("/hello", hello)
+	router.GET("/getEntries", getEntries(rekorClient))
 
 	logger.Fatal(router.Start(startURL))
 }
@@ -52,9 +59,35 @@ func main() {
 func listen(path string) (net.Listener, error) {
 	return net.Listen("unix", path)
 }
+func getEntries(client *RekorClient) echo.HandlerFunc {
+	return func(ctx echo.Context) error {
+		uuid := ctx.Param("uuid")
+		hash := ctx.Param("hash")
+		logIndex := ctx.Param("logIndex")
 
-func hello(ctx echo.Context) error {
-	return ctx.JSON(http.StatusOK, HTTPMessageBody{Message: "hello"})
+		var body map[string]interface{}
+
+		if uuid == "" && hash == "" && logIndex == "" {
+			return ctx.JSON(http.StatusBadRequest, HTTPMessageBody{Message: "No parameters provided"})
+		} else if uuid != "" && hash != "" && logIndex != "" {
+			return ctx.JSON(http.StatusBadRequest, HTTPMessageBody{Message: "Too many parameters provided, You should only provide one parameter of uuid, hash or logIndex"})
+		}
+
+		var err error
+		if uuid != "" {
+			body, err = client.GetEntryByUUID(uuid)
+		} else if logIndex != "" {
+			body, err = client.GetEntriesByLogIndex(logIndex)
+		} else if hash != "" {
+			body, err = client.GetEntriesByHash(hash)
+		}
+
+		if err != nil {
+			return ctx.JSON(http.StatusInternalServerError, HTTPMessageBody{Message: err.Error()})
+		}
+
+		return ctx.JSON(http.StatusOK, body)
+	}
 }
 
 type HTTPMessageBody struct {
