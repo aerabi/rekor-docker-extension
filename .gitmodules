@@ -1,0 +1,3 @@
+[submodule "rekor-search-ui"]
+	path = rekor-search-ui
+	url = git@github.com:sigstore/rekor-search-ui.git
